@@ -5,6 +5,9 @@ export interface IUser extends Document {
   email: string;
   password: string;
   role: string;
+  bookstoRead?: mongoose.Types.ObjectId[];
+  booksReading?: mongoose.Types.ObjectId[];
+  favorites?: mongoose.Types.ObjectId[];
 }
 
 const UserSchema = new mongoose.Schema({
@@ -12,6 +15,9 @@ const UserSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
   role: { type: String, default: 'user' }, // 'user' or 'admin'
+  bookstoRead: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Book' }],
+  booksReading: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Book' }],
+  favorites: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Book' }],
 });
 
 export const User = mongoose.model<IUser>('User', UserSchema);

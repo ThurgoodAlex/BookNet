@@ -20,16 +20,17 @@ router.post(
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
     const { username, email, password } = req.body;
+    const normalizedEmail = email.toLowerCase();
 
     try {
-      const existingUser = await User.findOne({ email });
-      if (existingUser) return res.status(400).json({ message: 'Email already exists' });
+      const existingUser = await User.findOne({ normalizedEmail });
+      if (existingUser) return res.status(409).json({ message: 'Email already exists' });
 
       const hashedPassword = await bcrypt.hash(password, 10);
 
       const user = new User({
         username,
-        email,
+        normalizedEmail,
         password: hashedPassword,
       });
 
@@ -58,9 +59,10 @@ router.post(
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
     const { email, password } = req.body;
+    const normalizedEmail = email.toLowerCase();
 
     try {
-      const user = await User.findOne({ email });
+      const user = await User.findOne({ normalizedEmail });
       if (!user) return res.status(400).json({ message: 'Invalid credentials' });
 
       const isMatch = await bcrypt.compare(password, user.password);
