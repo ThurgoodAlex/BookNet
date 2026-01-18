@@ -1,9 +1,9 @@
 import mongoose, { Schema, Document, Types } from 'mongoose';
 
 export interface IUserBook {
-  book: Types.ObjectId;       // reference to the Book
+  book: Types.ObjectId;  
   status: 'toRead' | 'reading' | 'read';
-  rating?: number;            // optional per-user rating
+  rating?: number;    
 }
 
 export interface IUser extends Document {
@@ -11,8 +11,8 @@ export interface IUser extends Document {
   email: string;
   password: string;
   role: 'user' | 'admin';
-  books: IUserBook[];         // user's books with status & rating
-  favorites: Types.ObjectId[]; // array of favorite books
+  books: IUserBook[];
+  favorites: Types.ObjectId[];
 }
 
 const UserBookSchema: Schema<IUserBook> = new Schema({

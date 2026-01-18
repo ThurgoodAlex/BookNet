@@ -24,7 +24,7 @@ router.post('/', authMiddleware, async (req: AuthRequest, res) => {
 });
 
 // GET / → get all books
-router.get('/', async (req, res) => {
+router.get('/', authMiddleware, async (req: AuthRequest, res) => {
   try {
     const books = await Book.find();
     res.json(books);
@@ -34,7 +34,7 @@ router.get('/', async (req, res) => {
 });
 
 // GET /:id → get a single book
-router.get('/:id', async (req, res) => {
+router.get('/:id', authMiddleware, async (req: AuthRequest, res) => {
   const bookId = req.params.id as string;
   if (!isValidObjectId(bookId)) return res.status(400).json({ message: 'Invalid book ID' });
 
@@ -69,7 +69,6 @@ router.put('/:id', authMiddleware, async (req: AuthRequest, res) => {
     res.status(400).json({ message: err.message });
   }
 });
-
 
 // DELETE /:id → delete book (admin only)
 router.delete('/:id', authMiddleware, async (req: AuthRequest, res) => {
