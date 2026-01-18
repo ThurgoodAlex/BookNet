@@ -12,7 +12,7 @@ const isValidObjectId = (id: string) => mongoose.Types.ObjectId.isValid(id);
 // POST / → create a new book (admin only)
 router.post('/', authMiddleware, async (req: AuthRequest, res) => {
   try {
-    if (req.user!.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
+    // if (req.user!.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
 
     const { title, type, description } = req.body;
     const book: IBook = new Book({ title, type, description, completed: false });
@@ -23,15 +23,64 @@ router.post('/', authMiddleware, async (req: AuthRequest, res) => {
   }
 });
 
-// GET / → get all books
+// GET / → get books books based on status if provided, else all books
 router.get('/', authMiddleware, async (req: AuthRequest, res) => {
   try {
-    const books = await Book.find();
+    const books = await Book.find({}, 'title description'); // only select title & description
+    if (books.length === 0) return res.status(404).json({ message: 'No books found' });
+
     res.json(books);
   } catch (err: any) {
     res.status(500).json({ message: err.message });
   }
 });
+
+// GET /books/user?status=toRead|reading|read
+router.get('/user', authMiddleware, async (req: AuthRequest, res) => {
+  try {
+    const statusFilter = req.query.status as string | undefined;
+    const validStatuses = ['toRead', 'reading', 'read'];
+
+    if (statusFilter && !validStatuses.includes(statusFilter)) {
+      return res.status(400).json({ message: 'Invalid status' });
+    }
+
+    // Populate books.book as IBook
+    const user = await User.findById(req.user!.id)
+      .populate<{ book: IBook }>('books.book', 'title type description completed');
+
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    // Filter by status if provided
+    const filteredBooks = statusFilter
+      ? user.books.filter(b => b.status === statusFilter)
+      : user.books;
+
+    // Map to include global book info + user-specific fields
+    const result = filteredBooks.map(b => {
+      const book = b.book as unknown as IBook;
+
+      return {
+        _id: book._id,
+        title: book.title,
+        type: book.type,
+        description: book.description,
+        status: b.status,
+        completed: b.completed ?? false,
+        rating: b.rating ?? undefined
+      };
+    });
+
+    if (result.length === 0) return res.status(404).json({ message: 'No books found' });
+
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+
+
 
 // GET /:id → get a single book
 router.get('/:id', authMiddleware, async (req: AuthRequest, res) => {
@@ -75,7 +124,7 @@ router.delete('/:id', authMiddleware, async (req: AuthRequest, res) => {
   const bookId = req.params.id as string;
   if (!isValidObjectId(bookId)) return res.status(400).json({ message: 'Invalid book ID' });
 
-  if (req.user!.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
+  // if (req.user!.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
 
   try {
     const book = await Book.findByIdAndDelete(bookId);
@@ -89,7 +138,10 @@ router.delete('/:id', authMiddleware, async (req: AuthRequest, res) => {
 // PATCH /:id/add-to-list → add book to user's list
 router.patch('/:id/add-to-list', authMiddleware, async (req: AuthRequest, res) => {
   const bookId = req.params.id as string;
-  const status = req.body.status as 'toRead' | 'reading' | 'read';
+  let status = req.body.status;
+  if (!status || !['toRead', 'reading', 'read'].includes(status)) {
+    status = 'toRead';
+  }
   const userId = req.user!.id;
 
   const user = await User.findById(userId);
@@ -129,40 +181,24 @@ router.patch('/:id/rating', authMiddleware, async (req: AuthRequest, res) => {
 
 // PATCH /:id/completed → mark book as read
 router.patch('/:id/completed', authMiddleware, async (req: AuthRequest, res) => {
-  const bookId = req.params.id as string;
+  const bookId = req.params.id;
   const userId = req.user!.id;
   const rating = req.body.rating ? Number(req.body.rating) : undefined;
 
-  if (!isValidObjectId(bookId)) return res.status(400).json({ message: 'Invalid book ID' });
+  const user = await User.findById(userId);
+  if (!user) return res.status(404).json({ message: 'User not found' });
 
-  const update: any = { 'books.$.status': 'read' };
-  if (rating) update['books.$.rating'] = rating;
+  const bookEntry = user.books.find(b => b.book.toString() === bookId);
+  if (!bookEntry) return res.status(404).json({ message: 'Book not in your list' });
 
-  const result = await User.updateOne(
-    { _id: userId, 'books.book': bookId },
-    { $set: update }
-  );
+  bookEntry.status = 'read';
+  bookEntry.completed = true;
+  if (rating !== undefined) bookEntry.rating = rating;
 
-  if (result.matchedCount === 0) return res.status(404).json({ message: 'Book not found in your list' });
+  user.markModified('books');
+  await user.save();
 
-  res.json({ message: 'Book marked as read' });
-});
-
-// PATCH /:id/remove → remove book from user's list
-router.patch('/:id/remove', authMiddleware, async (req: AuthRequest, res) => {
-  const bookId = req.params.id as string;
-  const userId = req.user!.id;
-
-  if (!isValidObjectId(bookId)) return res.status(400).json({ message: 'Invalid book ID' });
-
-  const result = await User.updateOne(
-    { _id: userId },
-    { $pull: { books: { book: bookId } } }
-  );
-
-  if (result.modifiedCount === 0) return res.status(404).json({ message: 'Book not found in your list' });
-
-  res.json({ message: 'Book removed from your list' });
+  res.json({ message: 'Book marked as read', book: bookEntry });
 });
 
 // PATCH /:id/favorite → add to favorites

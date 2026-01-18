@@ -4,6 +4,7 @@ export interface IBook extends Document {
   title: string;
   type: string;
   description?: string;
+  rating?: number; // user-specific rating optional
   completed: boolean; // global completion optional
 }
 

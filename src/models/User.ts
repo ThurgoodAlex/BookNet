@@ -3,6 +3,7 @@ import mongoose, { Schema, Document, Types } from 'mongoose';
 export interface IUserBook {
   book: Types.ObjectId;  
   status: 'toRead' | 'reading' | 'read';
+  completed?: boolean;
   rating?: number;    
 }
 
@@ -18,7 +19,8 @@ export interface IUser extends Document {
 const UserBookSchema: Schema<IUserBook> = new Schema({
   book: { type: Schema.Types.ObjectId, ref: 'Book', required: true },
   status: { type: String, enum: ['toRead', 'reading', 'read'], required: true },
-  rating: { type: Number, min: 1, max: 5 }
+  rating: { type: Number, min: 1, max: 5 },
+  completed: { type: Boolean, default: false },
 });
 
 const UserSchema: Schema<IUser> = new Schema({
@@ -31,3 +33,4 @@ const UserSchema: Schema<IUser> = new Schema({
 }, { timestamps: true });
 
 export const User = mongoose.model<IUser>('User', UserSchema);
+export default User;
