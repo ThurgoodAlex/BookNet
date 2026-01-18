@@ -3,39 +3,107 @@ import mongoose from 'mongoose';
 import Book, { IBook } from '../models/Book';
 import { User, IUserBook } from '../models/User';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
+import { searchBooks, getBookById } from '../services/googleBooks';
 
 const router = Router();
 
 // Helper to validate ObjectId
 const isValidObjectId = (id: string) => mongoose.Types.ObjectId.isValid(id);
 
-// POST / → create a new book (admin only)
-router.post('/', authMiddleware, async (req: AuthRequest, res) => {
+// Helper to check if cache needs refresh (30 days)
+const needsCacheRefresh = (lastFetched: Date) => {
+  return Date.now() - lastFetched.getTime() > 30 * 24 * 60 * 60 * 1000;
+};
+
+// GET /books/search?q=query → Search Google Books API
+router.get('/search', authMiddleware, async (req: AuthRequest, res) => {
   try {
-    // if (req.user!.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
+    const query = req.query.q as string;
+    if (!query) {
+      return res.status(400).json({ message: 'Search query required' });
+    }
 
-    const { title, type, description } = req.body;
-    const book: IBook = new Book({ title, type, description, completed: false });
-    const savedBook = await book.save();
-    res.status(201).json(savedBook);
-  } catch (err: any) {
-    res.status(400).json({ message: err.message });
-  }
-});
-
-// GET / → get books books based on status if provided, else all books
-router.get('/', authMiddleware, async (req: AuthRequest, res) => {
-  try {
-    const books = await Book.find({}, 'title description'); // only select title & description
-    if (books.length === 0) return res.status(404).json({ message: 'No books found' });
-
-    res.json(books);
+    const results = await searchBooks(query);
+    res.json(results);
   } catch (err: any) {
     res.status(500).json({ message: err.message });
   }
 });
 
-// GET /books/user?status=toRead|reading|read
+// POST /books/import → Import book from Google Books and add to user's library
+router.post('/import', authMiddleware, async (req: AuthRequest, res) => {
+  try {
+    const { googleBooksId, status = 'toRead' } = req.body;
+    const userId = req.user!.id;
+
+    if (!googleBooksId) {
+      return res.status(400).json({ message: 'Google Books ID required' });
+    }
+
+    // Check if book already exists in our system
+    let book = await Book.findOne({ googleBooksId });
+
+    if (!book) {
+      // Fetch from Google Books API
+      const googleData = await getBookById(googleBooksId);
+      if (!googleData) {
+        return res.status(404).json({ message: 'Book not found on Google Books' });
+      }
+
+      // Create book with minimal cached data
+      book = new Book({
+        googleBooksId,
+        isbn: googleData.isbn,
+        title: googleData.title,
+        author: googleData.authors[0],
+        coverImage: googleData.thumbnail,
+        genres: googleData.categories,
+        publishedYear: googleData.publishedDate 
+          ? new Date(googleData.publishedDate).getFullYear() 
+          : undefined,
+        pageCount: googleData.pageCount,
+        
+        // Our custom data
+        averageRating: 0,
+        totalRatings: 0,
+        relatedBooks: [],
+        lastFetched: new Date()
+      });
+      await book.save();
+    }
+
+    // Add to user's library
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    if (user.books.some(b => b.book.toString() === book._id.toString())) {
+      return res.status(400).json({ message: 'Book already in your library' });
+    }
+
+    user.books.push({
+      book: book._id,
+      status,
+      dateAdded: new Date()
+    } as IUserBook);
+
+    await user.save();
+
+    res.status(201).json({
+      message: 'Book imported successfully',
+      book: {
+        _id: book._id,
+        title: book.title,
+        author: book.author,
+        coverImage: book.coverImage,
+        status
+      }
+    });
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// GET /books/user?status=toRead|reading|read → Get user's books with cached data
 router.get('/user', authMiddleware, async (req: AuthRequest, res) => {
   try {
     const statusFilter = req.query.status as string | undefined;
@@ -45,9 +113,12 @@ router.get('/user', authMiddleware, async (req: AuthRequest, res) => {
       return res.status(400).json({ message: 'Invalid status' });
     }
 
-    // Populate books.book as IBook
+    // Get user with populated books (cached data only)
     const user = await User.findById(req.user!.id)
-      .populate<{ book: IBook }>('books.book', 'title type description completed');
+      .populate<{ books: Array<IUserBook & { book: IBook }> }>(
+        'books.book',
+        'title author coverImage genres averageRating position3D'
+      );
 
     if (!user) return res.status(404).json({ message: 'User not found' });
 
@@ -56,22 +127,26 @@ router.get('/user', authMiddleware, async (req: AuthRequest, res) => {
       ? user.books.filter(b => b.status === statusFilter)
       : user.books;
 
-    // Map to include global book info + user-specific fields
+    // Map to include cached book info + user-specific fields
     const result = filteredBooks.map(b => {
-      const book = b.book as unknown as IBook;
-
+      const book = b.book as IBook;
       return {
         _id: book._id,
         title: book.title,
-        type: book.type,
-        description: book.description,
+        author: book.author,
+        coverImage: book.coverImage,
+        genres: book.genres,
+        averageRating: book.averageRating, // Our rating
         status: b.status,
-        completed: b.completed ?? false,
-        rating: b.rating ?? undefined
+        rating: b.rating,
+        dateAdded: b.dateAdded,
+        position3D: book.position3D
       };
     });
 
-    if (result.length === 0) return res.status(404).json({ message: 'No books found' });
+    if (result.length === 0) {
+      return res.status(404).json({ message: 'No books found' });
+    }
 
     res.json(result);
   } catch (err: any) {
@@ -79,162 +154,344 @@ router.get('/user', authMiddleware, async (req: AuthRequest, res) => {
   }
 });
 
-
-
-
-// GET /:id → get a single book
+// GET /books/:id → Get book with cached data (fast)
 router.get('/:id', authMiddleware, async (req: AuthRequest, res) => {
   const bookId = req.params.id as string;
-  if (!isValidObjectId(bookId)) return res.status(400).json({ message: 'Invalid book ID' });
+  if (!isValidObjectId(bookId)) {
+    return res.status(400).json({ message: 'Invalid book ID' });
+  }
 
   try {
-    const book = await Book.findById(bookId);
+    const book = await Book.findById(bookId)
+      .select('title author coverImage genres averageRating totalRatings relatedBooks');
+    
     if (!book) return res.status(404).json({ message: 'Book not found' });
+    
     res.json(book);
   } catch (err: any) {
     res.status(500).json({ message: err.message });
   }
 });
 
-// PUT /:id → update book (admin only)
-router.put('/:id', authMiddleware, async (req: AuthRequest, res) => {
+// GET /books/:id/details → Get full book details from Google Books
+router.get('/:id/details', authMiddleware, async (req: AuthRequest, res) => {
   const bookId = req.params.id as string;
-  if (!isValidObjectId(bookId)) return res.status(400).json({ message: 'Invalid book ID' });
-  if (req.user!.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
+  if (!isValidObjectId(bookId)) {
+    return res.status(400).json({ message: 'Invalid book ID' });
+  }
 
   try {
     const book = await Book.findById(bookId);
     if (!book) return res.status(404).json({ message: 'Book not found' });
 
-    const { title, type, description, completed } = req.body;
-    if (title !== undefined) book.title = title;
-    if (type !== undefined) book.type = type;
-    if (description !== undefined) book.description = description;
-    if (completed !== undefined) book.completed = completed;
+    // Fetch fresh data from Google Books
+    const googleData = await getBookById(book.googleBooksId);
+    if (!googleData) {
+      return res.status(404).json({ message: 'Book details not available' });
+    }
 
-    const updatedBook = await book.save();
-    res.json(updatedBook);
+    // Update cache if stale
+    if (needsCacheRefresh(book.lastFetched)) {
+      book.title = googleData.title;
+      book.author = googleData.authors[0];
+      book.coverImage = googleData.thumbnail;
+      book.genres = googleData.categories;
+      book.pageCount = googleData.pageCount;
+      book.lastFetched = new Date();
+      await book.save();
+    }
+
+    // Return full Google Books data + our custom data
+    res.json({
+      ...googleData,
+      _id: book._id,
+      averageRating: book.averageRating, // Our rating
+      totalRatings: book.totalRatings,
+      relatedBooks: book.relatedBooks,
+      position3D: book.position3D
+    });
   } catch (err: any) {
-    res.status(400).json({ message: err.message });
+    res.status(500).json({ message: err.message });
   }
 });
 
-// DELETE /:id → delete book (admin only)
-router.delete('/:id', authMiddleware, async (req: AuthRequest, res) => {
-  const bookId = req.params.id as string;
-  if (!isValidObjectId(bookId)) return res.status(400).json({ message: 'Invalid book ID' });
-
-  // if (req.user!.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
-
-  try {
-    const book = await Book.findByIdAndDelete(bookId);
-    if (!book) return res.status(404).json({ message: 'Book not found' });
-    res.status(200).json({ message: 'Book deleted' });
-  } catch (err: any) {
-    res.status(400).json({ message: err.message });
-  }
-});
-
-// PATCH /:id/add-to-list → add book to user's list
+// PATCH /books/:id/add-to-list → Add book to user's list
 router.patch('/:id/add-to-list', authMiddleware, async (req: AuthRequest, res) => {
   const bookId = req.params.id as string;
   let status = req.body.status;
+  
+  if (!isValidObjectId(bookId)) {
+    return res.status(400).json({ message: 'Invalid book ID' });
+  }
+
   if (!status || !['toRead', 'reading', 'read'].includes(status)) {
     status = 'toRead';
   }
+
   const userId = req.user!.id;
 
-  const user = await User.findById(userId);
-  if (!user) return res.status(404).json({ message: 'User not found' });
+  try {
+    const book = await Book.findById(bookId);
+    if (!book) return res.status(404).json({ message: 'Book not found' });
 
-  if (user.books.some(b => b.book.toString() === bookId)) {
-    return res.status(400).json({ message: 'Book already in your list' });
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    if (user.books.some(b => b.book.toString() === bookId)) {
+      return res.status(400).json({ message: 'Book already in your list' });
+    }
+
+    user.books.push({
+      book: new mongoose.Types.ObjectId(bookId),
+      status,
+      dateAdded: new Date()
+    } as IUserBook);
+
+    await user.save();
+    res.json({ message: `Book added to ${status} list` });
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
   }
-
-  user.books.push({
-    book: new mongoose.Types.ObjectId(bookId),
-    status
-  } as IUserBook);
-
-  await user.save();
-  res.json({ message: `Book added to ${status} list` });
 });
 
-// PATCH /:id/rating → set per-user rating
+// PATCH /books/:id/status → Update reading status
+router.patch('/:id/status', authMiddleware, async (req: AuthRequest, res) => {
+  const bookId = req.params.id;
+  const { status } = req.body;
+  const userId = req.user!.id;
+
+  if (!isValidObjectId(bookId as string)) {
+    return res.status(400).json({ message: 'Invalid book ID' });
+  }
+
+  if (!status || !['toRead', 'reading', 'read'].includes(status)) {
+    return res.status(400).json({ message: 'Invalid status' });
+  }
+
+  try {
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    const bookEntry = user.books.find(b => b.book.toString() === bookId);
+    if (!bookEntry) {
+      return res.status(404).json({ message: 'Book not in your list' });
+    }
+
+    bookEntry.status = status;
+    if (status === 'reading' && !bookEntry.dateStarted) {
+      bookEntry.dateStarted = new Date();
+    }
+    if (status === 'read' && !bookEntry.dateCompleted) {
+      bookEntry.dateCompleted = new Date();
+      bookEntry.completed = true;
+    }
+
+    user.markModified('books');
+    await user.save();
+
+    res.json({ message: 'Status updated', book: bookEntry });
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// PATCH /books/:id/rating → Set user's rating and update book average
 router.patch('/:id/rating', authMiddleware, async (req: AuthRequest, res) => {
   const bookId = req.params.id as string;
   const rating = Number(req.body.rating);
   const userId = req.user!.id;
 
-  if (!rating || rating < 1 || rating > 5) return res.status(400).json({ message: 'Rating must be 1-5' });
-  if (!isValidObjectId(bookId)) return res.status(400).json({ message: 'Invalid book ID' });
+  if (!rating || rating < 1 || rating > 5) {
+    return res.status(400).json({ message: 'Rating must be 1-5' });
+  }
+  if (!isValidObjectId(bookId)) {
+    return res.status(400).json({ message: 'Invalid book ID' });
+  }
 
-  const result = await User.updateOne(
-    { _id: userId, 'books.book': bookId },
-    { $set: { 'books.$.rating': rating } }
-  );
+  try {
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
 
-  if (result.matchedCount === 0) return res.status(404).json({ message: 'Book not found in your list' });
+    const bookEntry = user.books.find(b => b.book.toString() === bookId);
+    if (!bookEntry) {
+      return res.status(404).json({ message: 'Book not in your list' });
+    }
 
-  res.json({ message: 'Rating updated' });
+    const oldRating = bookEntry.rating;
+    bookEntry.rating = rating;
+    user.markModified('books');
+    await user.save();
+
+    // Update book's average rating
+    const book = await Book.findById(bookId);
+    if (book) {
+      if (oldRating) {
+        // Update existing rating
+        const sum = book.averageRating * book.totalRatings;
+        book.averageRating = (sum - oldRating + rating) / book.totalRatings;
+      } else {
+        // New rating
+        const sum = book.averageRating * book.totalRatings;
+        book.totalRatings += 1;
+        book.averageRating = (sum + rating) / book.totalRatings;
+      }
+      await book.save();
+    }
+
+    res.json({ 
+      message: 'Rating updated',
+      rating,
+      bookAverageRating: book?.averageRating 
+    });
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
-// PATCH /:id/completed → mark book as read
+// PATCH /books/:id/completed → Mark book as read
 router.patch('/:id/completed', authMiddleware, async (req: AuthRequest, res) => {
   const bookId = req.params.id;
   const userId = req.user!.id;
   const rating = req.body.rating ? Number(req.body.rating) : undefined;
 
-  const user = await User.findById(userId);
-  if (!user) return res.status(404).json({ message: 'User not found' });
+  if (!isValidObjectId(bookId as string)) {
+    return res.status(400).json({ message: 'Invalid book ID' });
+  }
 
-  const bookEntry = user.books.find(b => b.book.toString() === bookId);
-  if (!bookEntry) return res.status(404).json({ message: 'Book not in your list' });
+  try {
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
 
-  bookEntry.status = 'read';
-  bookEntry.completed = true;
-  if (rating !== undefined) bookEntry.rating = rating;
+    const bookEntry = user.books.find(b => b.book.toString() === bookId);
+    if (!bookEntry) {
+      return res.status(404).json({ message: 'Book not in your list' });
+    }
 
-  user.markModified('books');
-  await user.save();
+    bookEntry.status = 'read';
+    bookEntry.completed = true;
+    bookEntry.dateCompleted = new Date();
+    
+    if (rating !== undefined) {
+      if (rating < 1 || rating > 5) {
+        return res.status(400).json({ message: 'Rating must be 1-5' });
+      }
+      bookEntry.rating = rating;
 
-  res.json({ message: 'Book marked as read', book: bookEntry });
+      // Update book's average rating
+      const book = await Book.findById(bookId);
+      if (book) {
+        const sum = book.averageRating * book.totalRatings;
+        book.totalRatings += 1;
+        book.averageRating = (sum + rating) / book.totalRatings;
+        await book.save();
+      }
+    }
+
+    user.markModified('books');
+    await user.save();
+
+    res.json({ message: 'Book marked as read', book: bookEntry });
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
-// PATCH /:id/favorite → add to favorites
+// PATCH /books/:id/favorite → Add to favorites
 router.patch('/:id/favorite', authMiddleware, async (req: AuthRequest, res) => {
   const bookId = req.params.id as string;
   const userId = req.user!.id;
 
-  if (!isValidObjectId(bookId)) return res.status(400).json({ message: 'Invalid book ID' });
+  if (!isValidObjectId(bookId)) {
+    return res.status(400).json({ message: 'Invalid book ID' });
+  }
 
-  const result = await User.updateOne(
-    { _id: userId },
-    { $addToSet: { favorites: bookId } }
-  );
+  try {
+    const result = await User.updateOne(
+      { _id: userId },
+      { $addToSet: { favorites: bookId } }
+    );
 
-  if (result.matchedCount === 0) return res.status(404).json({ message: 'User not found' });
-  if (result.modifiedCount === 0) return res.status(400).json({ message: 'Book already in favorites' });
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    if (result.modifiedCount === 0) {
+      return res.status(400).json({ message: 'Book already in favorites' });
+    }
 
-  res.json({ message: 'Book added to favorites' });
+    res.json({ message: 'Book added to favorites' });
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
-// PATCH /:id/unfavorite → remove from favorites
+// PATCH /books/:id/unfavorite → Remove from favorites
 router.patch('/:id/unfavorite', authMiddleware, async (req: AuthRequest, res) => {
   const bookId = req.params.id as string;
   const userId = req.user!.id;
 
-  if (!isValidObjectId(bookId)) return res.status(400).json({ message: 'Invalid book ID' });
+  if (!isValidObjectId(bookId)) {
+    return res.status(400).json({ message: 'Invalid book ID' });
+  }
 
-  const result = await User.updateOne(
-    { _id: userId },
-    { $pull: { favorites: bookId } }
-  );
+  try {
+    const result = await User.updateOne(
+      { _id: userId },
+      { $pull: { favorites: bookId } }
+    );
 
-  if (result.matchedCount === 0) return res.status(404).json({ message: 'User not found' });
-  if (result.modifiedCount === 0) return res.status(400).json({ message: 'Book not in favorites' });
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    if (result.modifiedCount === 0) {
+      return res.status(400).json({ message: 'Book not in favorites' });
+    }
 
-  res.json({ message: 'Book removed from favorites' });
+    res.json({ message: 'Book removed from favorites' });
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// DELETE /books/:id → Remove book from user's library
+router.delete('/:id', authMiddleware, async (req: AuthRequest, res) => {
+  const bookId = req.params.id as string;
+  const userId = req.user!.id;
+
+  if (!isValidObjectId(bookId)) {
+    return res.status(400).json({ message: 'Invalid book ID' });
+  }
+
+  try {
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    const bookIndex = user.books.findIndex(b => b.book.toString() === bookId);
+    if (bookIndex === -1) {
+      return res.status(404).json({ message: 'Book not in your library' });
+    }
+
+    // Update book's average rating if user had rated it
+    const bookEntry = user.books[bookIndex];
+    if (bookEntry.rating) {
+      const book = await Book.findById(bookId);
+      if (book && book.totalRatings > 0) {
+        const sum = book.averageRating * book.totalRatings;
+        book.totalRatings -= 1;
+        book.averageRating = book.totalRatings > 0 
+          ? (sum - bookEntry.rating) / book.totalRatings 
+          : 0;
+        await book.save();
+      }
+    }
+
+    user.books.splice(bookIndex, 1);
+    user.markModified('books');
+    await user.save();
+
+    res.json({ message: 'Book removed from library' });
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
 export default router;

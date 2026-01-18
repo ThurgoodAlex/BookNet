@@ -1,18 +1,79 @@
-import mongoose, { Schema, Document } from 'mongoose';
+import { Schema, model, Document } from 'mongoose';
 
 export interface IBook extends Document {
+  // Google Books reference
+  googleBooksId: string;
+  isbn?: string;
+  
+  // Cached data for performance (from Google Books)
   title: string;
-  type: string;
-  description?: string;
-  rating?: number; // user-specific rating optional
-  completed: boolean; // global completion optional
+  author: string;
+  coverImage: string;
+  genres: string[];
+  publishedYear?: number;
+  pageCount?: number;
+  
+  // Our custom data (not in Google Books)
+  averageRating: number;      // OUR users' average rating
+  totalRatings: number;       // Number of ratings from OUR users
+  relatedBooks: Schema.Types.ObjectId[];  // Computed relationships
+  
+  // 3D visualization metadata
+  position3D?: {
+    x: number;
+    y: number;
+    z: number;
+  };
+  color?: string;
+  spineWidth?: number;
+  
+  // Cache management
+  lastFetched: Date;
 }
 
-const BookSchema: Schema = new Schema({
+const bookSchema = new Schema<IBook>({
+  googleBooksId: { 
+    type: String, 
+    required: true, 
+    unique: true,
+    index: true 
+  },
+  isbn: { 
+    type: String, 
+    index: true 
+  },
+  
+  // Cached data
   title: { type: String, required: true },
-  type: { type: String, required: true },
-  description: { type: String },
-  completed: { type: Boolean, default: false }, // global flag (optional)
+  author: { type: String, required: true },
+  coverImage: String,
+  genres: [String],
+  publishedYear: Number,
+  pageCount: Number,
+  
+  // Our custom data
+  averageRating: { type: Number, default: 0, min: 0, max: 5 },
+  totalRatings: { type: Number, default: 0, min: 0 },
+  relatedBooks: [{ type: Schema.Types.ObjectId, ref: 'Book' }],
+  
+  // 3D visualization
+  position3D: {
+    x: Number,
+    y: Number,
+    z: Number
+  },
+  color: String,
+  spineWidth: Number,
+  
+  // Cache management
+  lastFetched: { type: Date, default: Date.now }
+}, { 
+  timestamps: true 
 });
 
-export default mongoose.model<IBook>('Book', BookSchema);
+// Indexes for performance
+bookSchema.index({ genres: 1, averageRating: -1 });
+bookSchema.index({ author: 1 });
+bookSchema.index({ averageRating: -1, totalRatings: -1 });
+
+export default model<IBook>('Book', bookSchema);

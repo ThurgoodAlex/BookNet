@@ -1,7 +1,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 import { Router, Request, Response } from 'express';
-import User from '../models/User';
+import IUser from '../models/User';
 const { body, validationResult } = require('express-validator');
 import { AuthRequest, authMiddleware } from '../middleware/auth';
 import { generateToken } from '../utils/jwt';
@@ -23,12 +23,12 @@ router.post(
     const normalizedEmail = email.toLowerCase();
 
     try {
-      const existingUser = await User.findOne({ normalizedEmail });
+      const existingUser = await IUser.findOne({ normalizedEmail });
       if (existingUser) return res.status(409).json({ message: 'Email already exists' });
 
       const hashedPassword = await bcrypt.hash(password, 10);
 
-      const user = new User({
+      const user = new IUser({
         username,
         email: normalizedEmail,
         password: hashedPassword,
@@ -62,7 +62,7 @@ router.post(
     const normalizedEmail = email.toLowerCase();
 
     try {
-      const user = await User.findOne({ email: normalizedEmail });
+      const user = await IUser.findOne({ email: normalizedEmail });
       if (!user) return res.status(400).json({ message: 'Invalid credentials' });
 
       const isMatch = await bcrypt.compare(password, user.password);
@@ -89,7 +89,7 @@ router.post('/logout', authMiddleware, (req: AuthRequest, res: Response) => {
 
 // -------- EXAMPLE PROTECTED ROUTE --------
 router.get('/profile', authMiddleware, async (req: AuthRequest, res) => {
-  const user = await User.findById(req.user?.id).select('username email');
+  const user = await IUser.findById(req.user?.id).select('username email');
 
   if (!user) {
     return res.status(404).json({ message: 'User not found' });
