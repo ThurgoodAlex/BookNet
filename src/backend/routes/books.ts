@@ -215,45 +215,6 @@ router.get('/:id/details', authMiddleware, async (req: AuthRequest, res) => {
   }
 });
 
-// PATCH /books/:id/add-to-list → Add book to user's list
-router.patch('/:id/add-to-list', authMiddleware, async (req: AuthRequest, res) => {
-  const bookId = req.params.id as string;
-  let status = req.body.status;
-  
-  if (!isValidObjectId(bookId)) {
-    return res.status(400).json({ message: 'Invalid book ID' });
-  }
-
-  if (!status || !['toRead', 'reading', 'read'].includes(status)) {
-    status = 'toRead';
-  }
-
-  const userId = req.user!.id;
-
-  try {
-    const book = await Book.findById(bookId);
-    if (!book) return res.status(404).json({ message: 'Book not found' });
-
-    const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ message: 'User not found' });
-
-    if (user.books.some(b => b.book.toString() === bookId)) {
-      return res.status(400).json({ message: 'Book already in your list' });
-    }
-
-    user.books.push({
-      book: new mongoose.Types.ObjectId(bookId),
-      status,
-      dateAdded: new Date()
-    } as IUserBook);
-
-    await user.save();
-    res.json({ message: `Book added to ${status} list` });
-  } catch (err: any) {
-    res.status(500).json({ message: err.message });
-  }
-});
-
 // PATCH /books/:id/status → Update reading status
 router.patch('/:id/status', authMiddleware, async (req: AuthRequest, res) => {
   const bookId = req.params.id;
@@ -343,54 +304,6 @@ router.patch('/:id/rating', authMiddleware, async (req: AuthRequest, res) => {
       rating,
       bookAverageRating: book?.averageRating 
     });
-  } catch (err: any) {
-    res.status(500).json({ message: err.message });
-  }
-});
-
-// PATCH /books/:id/completed → Mark book as read
-router.patch('/:id/completed', authMiddleware, async (req: AuthRequest, res) => {
-  const bookId = req.params.id;
-  const userId = req.user!.id;
-  const rating = req.body.rating ? Number(req.body.rating) : undefined;
-
-  if (!isValidObjectId(bookId as string)) {
-    return res.status(400).json({ message: 'Invalid book ID' });
-  }
-
-  try {
-    const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ message: 'User not found' });
-
-    const bookEntry = user.books.find(b => b.book.toString() === bookId);
-    if (!bookEntry) {
-      return res.status(404).json({ message: 'Book not in your list' });
-    }
-
-    bookEntry.status = 'read';
-    bookEntry.completed = true;
-    bookEntry.dateCompleted = new Date();
-    
-    if (rating !== undefined) {
-      if (rating < 1 || rating > 5) {
-        return res.status(400).json({ message: 'Rating must be 1-5' });
-      }
-      bookEntry.rating = rating;
-
-      // Update book's average rating
-      const book = await Book.findById(bookId);
-      if (book) {
-        const sum = book.averageRating * book.totalRatings;
-        book.totalRatings += 1;
-        book.averageRating = (sum + rating) / book.totalRatings;
-        await book.save();
-      }
-    }
-
-    user.markModified('books');
-    await user.save();
-
-    res.json({ message: 'Book marked as read', book: bookEntry });
   } catch (err: any) {
     res.status(500).json({ message: err.message });
   }
