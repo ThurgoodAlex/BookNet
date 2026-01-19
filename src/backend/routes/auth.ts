@@ -172,7 +172,6 @@ router.get('/profile', authMiddleware, async (req: AuthRequest, res: Response) =
       favoritesCount: user.favorites.length,
       totalBooksRead: user.books.filter(b => b.status === 'read').length,
       averageRating: user.averageRating,
-      shelfLayout: user.shelfLayout
     });
   } catch (err: unknown) {
     if (err instanceof Error) {
@@ -233,10 +232,6 @@ router.put(
         user.email = email;
       }
 
-      // Update 3D shelf preferences
-      if (shelfLayout) user.shelfLayout = shelfLayout;
-      if (shelfTheme) user.shelfTheme = shelfTheme;
-
       await user.save();
 
       res.json({
@@ -245,8 +240,6 @@ router.put(
           id: user._id,
           username: user.username,
           email: user.email,
-          shelfLayout: user.shelfLayout,
-          shelfTheme: user.shelfTheme
         }
       });
     } catch (err: unknown) {

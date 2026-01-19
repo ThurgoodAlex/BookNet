@@ -140,7 +140,6 @@ router.get('/user', authMiddleware, async (req: AuthRequest, res) => {
         status: b.status,
         rating: b.rating,
         dateAdded: b.dateAdded,
-        position3D: book.position3D
       };
     });
 
@@ -208,7 +207,6 @@ router.get('/:id/details', authMiddleware, async (req: AuthRequest, res) => {
       averageRating: book.averageRating, // Our rating
       totalRatings: book.totalRatings,
       relatedBooks: book.relatedBooks,
-      position3D: book.position3D
     });
   } catch (err: any) {
     res.status(500).json({ message: err.message });

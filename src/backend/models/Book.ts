@@ -18,15 +18,6 @@ export interface IBook extends Document {
   totalRatings: number;       // Number of ratings from OUR users
   relatedBooks: Schema.Types.ObjectId[];  // Computed relationships
   
-  // 3D visualization metadata
-  position3D?: {
-    x: number;
-    y: number;
-    z: number;
-  };
-  color?: string;
-  spineWidth?: number;
-  
   // Cache management
   lastFetched: Date;
 }
@@ -57,13 +48,6 @@ const bookSchema = new Schema<IBook>({
   relatedBooks: [{ type: Schema.Types.ObjectId, ref: 'Book' }],
   
   // 3D visualization
-  position3D: {
-    x: Number,
-    y: Number,
-    z: Number
-  },
-  color: String,
-  spineWidth: Number,
   
   // Cache management
   lastFetched: { type: Date, default: Date.now }

@@ -32,10 +32,6 @@ export interface IUser extends Document {
   preferredAuthors?: Map<string, number>; // author -> weight
   averageRating?: number;
   totalBooksRead?: number;
-  
-  // 3D shelf customization
-  shelfLayout?: '3d-grid' | '3d-spiral' | '3d-wall' | '3d-circular';
-  shelfTheme?: string;
 }
 
 const userBookSchema = new Schema<IUserBook>({
@@ -113,16 +109,9 @@ const userSchema = new Schema<IUser>({
   averageRating: Number,
   totalBooksRead: Number,
   
-  // 3D customization
-  shelfLayout: {
-    type: String,
-    enum: ['3d-grid', '3d-spiral', '3d-wall', '3d-circular'],
-    default: '3d-grid'
-  },
-  shelfTheme: String
 }, { 
   timestamps: true 
-});
+ });
 
 // Index for faster queries
 userSchema.index({ 'books.book': 1 });
