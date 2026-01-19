@@ -1,6 +1,10 @@
 # BookNet
 
-A personal book library management application with Google Books API integration.
+## Tagline 
+    Interactive personal bookshelf with data-driven book recommendations
+
+## Focus
+    Showcase advanced frontend and full-stack skills through 3D visualization and relationship graphs
 
 ## Tech Stack
 
