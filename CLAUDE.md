@@ -92,6 +92,15 @@ npm run build        # Compile TypeScript
   - Break down complex tasks into steps and get approval before proceeding
   - Ask for my input on design decisions and architecture choices
   - Summarize what you've done after completing each major step
+- Code Review Process:
+  - After completing a feature or significant change, perform a self-review checking for:
+    - Code adheres to project conventions (TypeScript strict mode, naming, etc.)
+    - Proper error handling and validation
+    - Test coverage for new functionality
+    - Security considerations (auth, input validation)
+    - Performance implications (database queries, API calls)
+  - Highlight any concerns or areas that need attention
+  - Suggest improvements or refactoring opportunities
 
 ## Database Models
 
