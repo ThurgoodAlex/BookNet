@@ -81,6 +81,7 @@ npm run build        # Compile TypeScript
 - All routes use async/await with try-catch
 
 ## Development Workflow
+
 - Follow test-driven development (TDD) when implementing new features:
   - Write tests before implementation whenever feasible
   - For new functions/methods, create basic unit tests first
