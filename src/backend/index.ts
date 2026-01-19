@@ -1,6 +1,6 @@
 import express, { Request, Response, NextFunction } from 'express';
-import bookRoutes from './backend/routes/books';
-import authRoutes from './backend/routes/auth';
+import bookRoutes from './routes/books';
+import authRoutes from './routes/auth';
 
 
 const app = express();
