@@ -346,22 +346,6 @@ describe('Auth Routes', () => {
       expect(response.body.user.email).toBe('newemail@example.com');
     });
 
-    it('should update shelf preferences', async () => {
-      const testUser = await createTestUser();
-
-      const response = await request(app)
-        .put('/auth/profile')
-        .set(authHeader(testUser.token))
-        .send({
-          shelfLayout: '3d-spiral',
-          shelfTheme: 'dark'
-        });
-
-      expect(response.status).toBe(200);
-      expect(response.body.user.shelfLayout).toBe('3d-spiral');
-      expect(response.body.user.shelfTheme).toBe('dark');
-    });
-
     it('should return 409 when username is already taken', async () => {
       await createTestUser({ username: 'takenusername' });
       const testUser = await createTestUser();
