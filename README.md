@@ -2,7 +2,7 @@
 
 A full-stack book library management API built with Node.js, TypeScript, and MongoDB. Features JWT authentication, Google Books API integration, and comprehensive test coverage.
 
-**[Live Demo](#)** · **[API Documentation](#api-reference)**
+**[API Documentation](#api-reference)**
 
 ---
 
