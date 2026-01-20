@@ -15,7 +15,6 @@ I wanted to demonstrate my ability to architect and build a production-ready bac
 - **Database Modeling** — Efficient MongoDB schemas with embedded documents and indexing strategies
 - **External API Integration** — Google Books API with intelligent caching to reduce costs
 - **Testing** — TDD approach with isolated tests using in-memory MongoDB
-- **TypeScript** — Strict mode with proper typing throughout
 
 ---
 
