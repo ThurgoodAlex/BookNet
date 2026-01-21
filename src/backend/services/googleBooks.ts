@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const GOOGLE_BOOKS_API = 'https://www.googleapis.com/books/v1/volumes';
-const API_KEY = process.env.GOOGLE_BOOKS_API_KEY; // Optional, increases rate limits
+const API_KEY = process.env.GOOGLE_BOOKS_API_KEY;
 
 export interface GoogleBookResult {
   id: string;
