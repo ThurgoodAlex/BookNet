@@ -1,15 +1,15 @@
 import { Router } from 'express';
-import mongoose from 'mongoose';
 import Book, { IBook } from '../models/Book';
 import { User, IUserBook } from '../models/User';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { searchBooks, getBookById } from '../services/googleBooks';
 import { updateUserPreferences } from '../services/recommendation';
+import {validateObjectId} from '../middleware/validate';
 
 const router = Router();
 
 // Helper to validate ObjectId
-const isValidObjectId = (id: string) => mongoose.Types.ObjectId.isValid(id);
+
 
 // Helper to check if cache needs refresh (30 days)
 const needsCacheRefresh = (lastFetched: Date) => {
@@ -155,12 +155,9 @@ router.get('/user', authMiddleware, async (req: AuthRequest, res) => {
 });
 
 // GET /books/:id → Get book with cached data (fast)
-router.get('/:id', authMiddleware, async (req: AuthRequest, res) => {
+router.get('/:id', authMiddleware, validateObjectId('id'), async (req: AuthRequest, res) => {
   const bookId = req.params.id as string;
-  if (!isValidObjectId(bookId)) {
-    return res.status(400).json({ message: 'Invalid book ID' });
-  }
-
+  
   try {
     const book = await Book.findById(bookId)
       .select('title author coverImage genres averageRating totalRatings relatedBooks');
@@ -174,12 +171,8 @@ router.get('/:id', authMiddleware, async (req: AuthRequest, res) => {
 });
 
 // GET /books/:id/details → Get full book details from Google Books
-router.get('/:id/details', authMiddleware, async (req: AuthRequest, res) => {
+router.get('/:id/details', authMiddleware, validateObjectId('id'), async (req: AuthRequest, res) => {
   const bookId = req.params.id as string;
-  if (!isValidObjectId(bookId)) {
-    return res.status(400).json({ message: 'Invalid book ID' });
-  }
-
   try {
     const book = await Book.findById(bookId);
     if (!book) return res.status(404).json({ message: 'Book not found' });
@@ -215,15 +208,11 @@ router.get('/:id/details', authMiddleware, async (req: AuthRequest, res) => {
 });
 
 // PATCH /books/:id/status → Update reading status
-router.patch('/:id/status', authMiddleware, async (req: AuthRequest, res) => {
+router.patch('/:id/status', authMiddleware, validateObjectId('id'), async (req: AuthRequest, res) => {
   const bookId = req.params.id;
   const { status } = req.body;
   const userId = req.user!.id;
-
-  if (!isValidObjectId(bookId as string)) {
-    return res.status(400).json({ message: 'Invalid book ID' });
-  }
-
+  
   if (!status || !['toRead', 'reading', 'read'].includes(status)) {
     return res.status(400).json({ message: 'Invalid status' });
   }
@@ -256,18 +245,14 @@ router.patch('/:id/status', authMiddleware, async (req: AuthRequest, res) => {
 });
 
 // PATCH /books/:id/rating → Set user's rating and update book average
-router.patch('/:id/rating', authMiddleware, async (req: AuthRequest, res) => {
+router.patch('/:id/rating', authMiddleware, validateObjectId('id'), async (req: AuthRequest, res) => {
   const bookId = req.params.id as string;
   const rating = Number(req.body.rating);
   const userId = req.user!.id;
 
-  // Validate half-point ratings (1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5)
   const validRatings = [1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5];
   if (!rating || !validRatings.includes(rating)) {
     return res.status(400).json({ message: 'Rating must be 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, or 5' });
-  }
-  if (!isValidObjectId(bookId)) {
-    return res.status(400).json({ message: 'Invalid book ID' });
   }
 
   try {
@@ -287,15 +272,14 @@ router.patch('/:id/rating', authMiddleware, async (req: AuthRequest, res) => {
     // Update book's average rating
     const book = await Book.findById(bookId);
     if (book) {
+      const currentTotalRatings = book.totalRatings || 0;
+      const currentAverage = book.averageRating || 0;
+      const sumRatings = currentAverage * currentTotalRatings;
       if (oldRating) {
-        // Update existing rating
-        const sum = book.averageRating * book.totalRatings;
-        book.averageRating = (sum - oldRating + rating) / book.totalRatings;
+        book.averageRating = (sumRatings - oldRating + rating) / currentTotalRatings;
       } else {
-        // New rating
-        const sum = book.averageRating * book.totalRatings;
-        book.totalRatings += 1;
-        book.averageRating = (sum + rating) / book.totalRatings;
+        book.totalRatings = currentTotalRatings + 1;
+        book.averageRating = (sumRatings + rating) / book.totalRatings;
       }
       await book.save();
     }
@@ -314,14 +298,10 @@ router.patch('/:id/rating', authMiddleware, async (req: AuthRequest, res) => {
 });
 
 // PATCH /books/:id/favorite → Add to favorites
-router.patch('/:id/favorite', authMiddleware, async (req: AuthRequest, res) => {
+router.patch('/:id/favorite', authMiddleware, validateObjectId('id'), async (req: AuthRequest, res) => {
   const bookId = req.params.id as string;
   const userId = req.user!.id;
-
-  if (!isValidObjectId(bookId)) {
-    return res.status(400).json({ message: 'Invalid book ID' });
-  }
-
+  
   try {
     const result = await User.updateOne(
       { _id: userId },
@@ -345,13 +325,9 @@ router.patch('/:id/favorite', authMiddleware, async (req: AuthRequest, res) => {
 });
 
 // PATCH /books/:id/unfavorite → Remove from favorites
-router.patch('/:id/unfavorite', authMiddleware, async (req: AuthRequest, res) => {
+router.patch('/:id/unfavorite', authMiddleware, validateObjectId('id'), async (req: AuthRequest, res) => {
   const bookId = req.params.id as string;
   const userId = req.user!.id;
-
-  if (!isValidObjectId(bookId)) {
-    return res.status(400).json({ message: 'Invalid book ID' });
-  }
 
   try {
     const result = await User.updateOne(
@@ -373,13 +349,9 @@ router.patch('/:id/unfavorite', authMiddleware, async (req: AuthRequest, res) =>
 });
 
 // DELETE /books/:id → Remove book from user's library
-router.delete('/:id', authMiddleware, async (req: AuthRequest, res) => {
+router.delete('/:id', authMiddleware,validateObjectId('id'), async (req: AuthRequest, res) => {
   const bookId = req.params.id as string;
   const userId = req.user!.id;
-
-  if (!isValidObjectId(bookId)) {
-    return res.status(400).json({ message: 'Invalid book ID' });
-  }
 
   try {
     const user = await User.findById(userId);
