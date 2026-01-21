@@ -20,16 +20,12 @@ router.get('/', authMiddleware, async (req: AuthRequest, res) => {
   }
 });
 
-// GET /recommendations/genres → Get recommendations filtered by specific genre
+// GET /recommendations/genres → Get recommendations, optionally filtered by genre
 router.get('/genres', authMiddleware, async (req: AuthRequest, res) => {
   try {
     const userId = req.user!.id;
-    const genre = req.query.genre as string;
+    const genre = req.query.genre as string | undefined;
     const limit = Math.min(Number(req.query.limit) || 10, 50);
-
-    if (!genre) {
-      return res.status(400).json({ message: 'Genre query parameter required' });
-    }
 
     const result = await getRecommendations(userId, limit, genre);
     res.json(result);

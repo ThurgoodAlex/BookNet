@@ -146,15 +146,24 @@ describe('Recommendation Routes', () => {
       });
     });
 
-    it('should return 400 when genre parameter is missing', async () => {
+    it('should return best fit recommendations when genre parameter is missing', async () => {
       const testUser = await createTestUser();
+
+      // Create some books
+      await createTestBook({
+        title: 'Any Genre Book',
+        genres: ['Fiction'],
+        averageRating: 4.5,
+        totalRatings: 10
+      });
 
       const response = await request(app)
         .get('/recommendations/genres')
         .set(authHeader(testUser.token));
 
-      expect(response.status).toBe(400);
-      expect(response.body.message).toBe('Genre query parameter required');
+      expect(response.status).toBe(200);
+      expect(response.body.recommendations).toBeDefined();
+      expect(response.body.basedOn).toBeDefined();
     });
 
     it('should return 401 when not authenticated', async () => {
