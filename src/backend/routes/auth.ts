@@ -35,7 +35,6 @@ router.post(
     const { username, email, password } = req.body;
 
     try {
-      // Check if user already exists (email or username)
       const existingUser = await User.findOne({
         $or: [{ email }, { username }]
       });
@@ -47,10 +46,8 @@ router.post(
         return res.status(409).json({ message: 'Username already taken' });
       }
 
-      // Hash password
       const hashedPassword = await bcrypt.hash(password, 10);
 
-      // Create new user
       const user = new User({
         username,
         email,
@@ -60,7 +57,6 @@ router.post(
 
       await user.save();
 
-      // Generate token immediately (auto-login after registration)
       const token = generateToken({ id: user._id.toString(), role: user.role });
 
       res.status(201).json({
@@ -105,19 +101,16 @@ router.post(
     const { email, password } = req.body;
 
     try {
-      // Find user by email
       const user = await User.findOne({ email });
       if (!user) {
         return res.status(401).json({ message: 'Invalid email or password' });
       }
 
-      // Verify password
       const isMatch = await bcrypt.compare(password, user.password);
       if (!isMatch) {
         return res.status(401).json({ message: 'Invalid email or password' });
       }
 
-      // Generate JWT token
       const token = generateToken({ 
         id: user._id.toString(), 
         role: user.role 
@@ -145,10 +138,7 @@ router.post(
 );
 
 // POST /auth/logout → Logout user (client-side token removal mainly)
-router.post('/logout', authMiddleware, (req: AuthRequest, res: Response) => {
-  // If using cookies (uncomment if needed)
-  // res.clearCookie('token');
-  
+router.post('/logout', (req: AuthRequest, res: Response) => {
   res.status(200).json({ message: 'Logged out successfully' });
 });
 
@@ -156,8 +146,8 @@ router.post('/logout', authMiddleware, (req: AuthRequest, res: Response) => {
 router.get('/profile', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
     const user = await User.findById(req.user!.id)
-      .select('-password') // Exclude password
-      .populate('books.book', 'title author coverImage'); // Populate book info
+      .select('-password')
+      .populate('books.book', 'title author coverImage');
 
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
@@ -206,7 +196,7 @@ router.put(
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { username, email, shelfLayout, shelfTheme } = req.body;
+    const { username, email } = req.body;
     const userId = req.user!.id;
 
     try {
@@ -280,13 +270,11 @@ router.put(
         return res.status(404).json({ message: 'User not found' });
       }
 
-      // Verify current password
       const isMatch = await bcrypt.compare(currentPassword, user.password);
       if (!isMatch) {
         return res.status(401).json({ message: 'Current password is incorrect' });
       }
 
-      // Hash and save new password
       user.password = await bcrypt.hash(newPassword, 10);
       await user.save();
 

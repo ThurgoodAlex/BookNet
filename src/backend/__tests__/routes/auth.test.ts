@@ -278,14 +278,8 @@ describe('Auth Routes', () => {
       expect(response.status).toBe(200);
       expect(response.body.message).toBe('Logged out successfully');
     });
-
-    it('should return 401 when not authenticated', async () => {
-      const response = await request(app).post('/auth/logout');
-
-      expect(response.status).toBe(401);
-    });
   });
-
+  
   describe('GET /auth/profile', () => {
     it('should return user profile when authenticated', async () => {
       const testUser = await createTestUser();

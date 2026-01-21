@@ -5,15 +5,13 @@ import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { searchBooks, getBookById } from '../services/googleBooks';
 import { updateUserPreferences } from '../services/recommendation';
 import {validateObjectId} from '../middleware/validate';
+import { differenceInDays } from 'date-fns';
 
 const router = Router();
 
-// Helper to validate ObjectId
-
-
 // Helper to check if cache needs refresh (30 days)
 const needsCacheRefresh = (lastFetched: Date) => {
-  return Date.now() - lastFetched.getTime() > 30 * 24 * 60 * 60 * 1000;
+  return differenceInDays(new Date(), lastFetched) > 30;
 };
 
 // GET /books/search?q=query → Search Google Books API
