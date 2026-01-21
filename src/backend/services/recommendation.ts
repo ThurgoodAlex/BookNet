@@ -121,14 +121,57 @@ function calculateScore(
 }
 
 /**
+ * Convert MongoDB object to Map (handles both Map and plain object)
+ */
+function toMap(data: Map<string, number> | Record<string, number> | undefined): Map<string, number> {
+  if (!data) return new Map();
+  if (data instanceof Map) return data;
+  return new Map(Object.entries(data));
+}
+
+/**
  * Get top N items from a Map sorted by value
  */
-function getTopFromMap(map: Map<string, number> | undefined, limit: number): string[] {
-  if (!map) return [];
+function getTopFromMap(map: Map<string, number>, limit: number): string[] {
   return Array.from(map.entries())
     .sort((a, b) => b[1] - a[1])
     .slice(0, limit)
     .map(([key]) => key);
+}
+
+/**
+ * Build MongoDB query for candidate books
+ */
+function buildCandidateQuery(
+  topGenres: string[],
+  topAuthors: string[],
+  genreFilter?: string
+): Record<string, unknown> {
+  // Genre filter takes full precedence - just fetch that genre
+  // (scoring will still use preferences for ranking)
+  if (genreFilter) {
+    return { genres: genreFilter };
+  }
+
+  // No filter: find books matching user's preferred genres or authors
+  const orConditions: Record<string, unknown>[] = [];
+
+  if (topGenres.length > 0) {
+    orConditions.push({ genres: { $in: topGenres } });
+  }
+  if (topAuthors.length > 0) {
+    orConditions.push({ author: { $in: topAuthors } });
+  }
+
+  if (orConditions.length === 0) {
+    return {}; // No preferences - fetch popular books
+  }
+
+  if (orConditions.length === 1) {
+    return orConditions[0];
+  }
+
+  return { $or: orConditions };
 }
 
 /**
@@ -147,37 +190,17 @@ export async function getRecommendations(
   // Get user's existing book IDs to exclude from recommendations
   const userBookIds = new Set(user.books.map(b => b.book.toString()));
 
-  const preferredGenres = user.preferredGenres || new Map<string, number>();
-  const preferredAuthors = user.preferredAuthors || new Map<string, number>();
+  // Convert from MongoDB storage format
+  const preferredGenres = toMap(user.preferredGenres);
+  const preferredAuthors = toMap(user.preferredAuthors);
 
   const topGenres = getTopFromMap(preferredGenres, 5);
   const topAuthors = getTopFromMap(preferredAuthors, 5);
 
-  let query: any = {};
-
-  // If user has no preferences, return popular books
   const hasPreferences = topGenres.length > 0 || topAuthors.length > 0;
 
-  if (hasPreferences) {
-    // Build query to find books matching user's preferences
-    const orConditions: any[] = [];
-
-    if (topGenres.length > 0) {
-      orConditions.push({ genres: { $in: topGenres } });
-    }
-    if (topAuthors.length > 0) {
-      orConditions.push({ author: { $in: topAuthors } });
-    }
-
-    if (orConditions.length > 0) {
-      query.$or = orConditions;
-    }
-  }
-
-  // Apply genre filter if specified
-  if (genreFilter) {
-    query.genres = genreFilter;
-  }
+  // Build query
+  const query = buildCandidateQuery(topGenres, topAuthors, genreFilter);
 
   // Fetch candidate books
   const candidateBooks = await Book.find(query)
