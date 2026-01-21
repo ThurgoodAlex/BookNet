@@ -8,30 +8,48 @@
 
 ## Tech Stack
 
-- **Backend:** Node.js, Express 5, TypeScript, MongoDB/Mongoose 9
+### Backend
+- **Runtime:** Node.js, Express 5, TypeScript
+- **Database:** MongoDB/Mongoose 9
 - **Auth:** JWT (jsonwebtoken), bcryptjs
 - **Validation:** express-validator
 - **Testing:** Jest, Supertest, mongodb-memory-server
+
+### Frontend
+- **Framework:** React 19, TypeScript
+- **Build Tool:** Vite 7
+- **Styling:** Tailwind CSS 4
+- **Linting:** ESLint 9 with TypeScript support
 
 ## Project Structure
 
 ```
 src/
 ├── backend/
-│   ├── __tests__/          # Jest tests with MongoDB memory server
-│   ├── middleware/auth.ts  # JWT authentication middleware
+│   ├── __tests__/              # Jest tests with MongoDB memory server
+│   ├── middleware/
+│   │   ├── auth.ts             # JWT authentication middleware
+│   │   └── validate.ts         # ObjectId validation middleware
 │   ├── models/
-│   │   ├── User.ts         # User schema with embedded books array
-│   │   └── Book.ts         # Book schema (Google Books cache)
+│   │   ├── User.ts             # User schema with embedded books array
+│   │   └── Book.ts             # Book schema (Google Books cache)
 │   ├── routes/
-│   │   ├── auth.ts         # /auth/* endpoints
-│   │   ├── books.ts        # /books/* endpoints
-│   │   └── recommendation.ts # Placeholder
+│   │   ├── auth.ts             # /auth/* endpoints
+│   │   ├── books.ts            # /books/* endpoints
+│   │   └── recommendation.ts   # /recommendations/* endpoints
 │   ├── services/
-│   │   └── googleBooks.ts  # Google Books API wrapper
-│   ├── utils/jwt.ts        # Token generation/verification
-│   └── index.ts            # Express app entry point
-└── frontend/               # Not yet implemented
+│   │   ├── googleBooks.ts      # Google Books API wrapper
+│   │   └── recommendation.ts   # Recommendation algorithm
+│   ├── utils/jwt.ts            # Token generation/verification
+│   └── index.ts                # Express app entry point
+└── frontend/
+    ├── src/
+    │   ├── App.tsx             # Main app component
+    │   ├── main.tsx            # React entry point
+    │   └── index.css           # Global styles with Tailwind
+    ├── vite.config.ts          # Vite configuration
+    ├── tsconfig.json           # TypeScript configuration
+    └── package.json            # Frontend dependencies
 ```
 
 ## Commands
@@ -43,6 +61,12 @@ npm test             # Run Jest tests
 npm run test:watch   # Watch mode
 npm run test:coverage
 npm run build        # Compile TypeScript
+
+# From src/frontend/
+npm run dev          # Start Vite dev server
+npm run build        # TypeScript check + Vite build
+npm run lint         # Run ESLint
+npm run preview      # Preview production build
 ```
 
 ## API Routes
@@ -67,6 +91,11 @@ npm run build        # Compile TypeScript
 - `PATCH /:id/favorite` - Add to favorites
 - `PATCH /:id/unfavorite` - Remove from favorites
 - `DELETE /:id` - Remove from library
+
+### Recommendations (`/recommendations`)
+- `GET /` - Get personalized recommendations (requires auth)
+- `GET /genres?genre=...` - Filter recommendations by genre (requires auth)
+- `POST /refresh` - Force recalculate user preferences (requires auth)
 
 ## Environment Variables
 
@@ -109,11 +138,21 @@ npm run build        # Compile TypeScript
 
 ## Database Models
 
-**User:** username, email, password (hashed), role, books[], favorites[], analytics fields
+**User:** username, email, password (hashed), role, books[], favorites[], preferredGenres (Map), preferredAuthors (Map), averageRating, totalBooksRead
 
 **Book:** googleBooksId, title, author, coverImage, genres[], averageRating, totalRatings, lastFetched (30-day cache)
 
 **UserBook (embedded):** book (ref), status, rating, dateAdded, dateStarted, dateCompleted, readingProgress
+
+## Recommendation Engine
+
+The recommendation service calculates personalized suggestions based on:
+- **Genre preferences** - Weighted by book ratings (0 weight for 2.5 and below, up to 1.0 for 5-star)
+- **Author preferences** - 2x weighted compared to genres
+- **Favorite bonus** - +0.5 weight added for favorited books
+- **Popularity score** - Book rating × log(totalRatings)
+
+User preferences auto-update when rating, favoriting, or removing books. Excludes books already in user's library.
 
 ## Testing
 
