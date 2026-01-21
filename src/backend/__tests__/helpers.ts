@@ -1,5 +1,4 @@
 import bcrypt from 'bcryptjs';
-import mongoose from 'mongoose';
 import { User } from '../models/User';
 import Book from '../models/Book';
 import { generateToken } from '../utils/jwt';

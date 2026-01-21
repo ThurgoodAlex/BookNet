@@ -4,6 +4,7 @@ import Book, { IBook } from '../models/Book';
 import { User, IUserBook } from '../models/User';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { searchBooks, getBookById } from '../services/googleBooks';
+import { updateUserPreferences } from '../services/recommendation';
 
 const router = Router();
 
@@ -260,8 +261,10 @@ router.patch('/:id/rating', authMiddleware, async (req: AuthRequest, res) => {
   const rating = Number(req.body.rating);
   const userId = req.user!.id;
 
-  if (!rating || rating < 1 || rating > 5) {
-    return res.status(400).json({ message: 'Rating must be 1-5' });
+  // Validate half-point ratings (1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5)
+  const validRatings = [1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5];
+  if (!rating || !validRatings.includes(rating)) {
+    return res.status(400).json({ message: 'Rating must be 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, or 5' });
   }
   if (!isValidObjectId(bookId)) {
     return res.status(400).json({ message: 'Invalid book ID' });
@@ -297,10 +300,13 @@ router.patch('/:id/rating', authMiddleware, async (req: AuthRequest, res) => {
       await book.save();
     }
 
-    res.json({ 
+    // Update user preferences for recommendations (async, don't wait)
+    updateUserPreferences(userId).catch(console.error);
+
+    res.json({
       message: 'Rating updated',
       rating,
-      bookAverageRating: book?.averageRating 
+      bookAverageRating: book?.averageRating
     });
   } catch (err: any) {
     res.status(500).json({ message: err.message });
@@ -328,6 +334,9 @@ router.patch('/:id/favorite', authMiddleware, async (req: AuthRequest, res) => {
     if (result.modifiedCount === 0) {
       return res.status(400).json({ message: 'Book already in favorites' });
     }
+
+    // Update user preferences for recommendations (async, don't wait)
+    updateUserPreferences(userId).catch(console.error);
 
     res.json({ message: 'Book added to favorites' });
   } catch (err: any) {
@@ -398,6 +407,9 @@ router.delete('/:id', authMiddleware, async (req: AuthRequest, res) => {
     user.books.splice(bookIndex, 1);
     user.markModified('books');
     await user.save();
+
+    // Update user preferences for recommendations (async, don't wait)
+    updateUserPreferences(userId).catch(console.error);
 
     res.json({ message: 'Book removed from library' });
   } catch (err: any) {

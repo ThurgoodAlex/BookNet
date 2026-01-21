@@ -1,6 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import bookRoutes from './routes/books';
 import authRoutes from './routes/auth';
+import recommendationRoutes from './routes/recommendation';
 
 
 const app = express();
@@ -15,6 +16,7 @@ mongoose.connect('mongodb://localhost:27017/BookNet')
 app.use(express.json());
 app.use('/books', bookRoutes);
 app.use('/auth', authRoutes);
+app.use('/recommendations', recommendationRoutes);
 
 app.get('/', (req: Request, res: Response) => {
   res.send('Welcome to BookNet API');

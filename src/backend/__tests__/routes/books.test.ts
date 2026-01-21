@@ -494,7 +494,7 @@ describe('Books Routes', () => {
         .send({ rating: 0 });
 
       expect(response.status).toBe(400);
-      expect(response.body.message).toBe('Rating must be 1-5');
+      expect(response.body.message).toBe('Rating must be 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, or 5');
     });
 
     it('should return 400 for rating above 5', async () => {
@@ -508,7 +508,7 @@ describe('Books Routes', () => {
         .send({ rating: 6 });
 
       expect(response.status).toBe(400);
-      expect(response.body.message).toBe('Rating must be 1-5');
+      expect(response.body.message).toBe('Rating must be 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, or 5');
     });
 
     it('should return 404 when book not in user library', async () => {
